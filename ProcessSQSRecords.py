@@ -46,6 +46,8 @@ def lambda_handler(event, context):
             logger.info("No available instance.")
 
         # Get InstanceID
+        # Lambdaの同時実行を制御しないとDB更新等はデッドロックになりそう
+        # LambdaのProvisioned Concurrencyを設定することで初期実行の遅延を制御
         instance = ec2_resp["Reservations"][0]["InstanceId"]
         response = ssm.send_command(
             InstanceIds=instance,
