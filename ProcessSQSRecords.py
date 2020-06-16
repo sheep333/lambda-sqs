@@ -68,6 +68,17 @@ def lambda_handler(event, context):
         # コマンド実行状況に応じて対応を変更
         # 時間がかかるようならここを非同期的にする仕組み(別Lambdaにしてアプリ側からのpushを受けとる)
         # Lambdaが自動でSQSのメッセージを成功/失敗で場合分して処理してくれる気もするので、そのままResponseを返せばOKかも？
+        """
+        Pending: The command has not been sent to any instances.
+        In Progress: The command has been sent to at least one instance but has not reached a final state on all instances.
+        Success: The command successfully ran on all invocations. This is a terminal state.
+        Delivery Timed Out: The value of MaxErrors or more command invocations shows a status of Delivery Timed Out. This is a terminal state.
+        Execution Timed Out: The value of MaxErrors or more command invocations shows a status of Execution Timed Out. This is a terminal state.
+        Failed: The value of MaxErrors or more command invocations shows a status of Failed. This is a terminal state.
+        Incomplete: The command was attempted on all instances and one or more invocations does not have a value of Success but not enough invocations failed for the status to be Failed. This is a terminal state.
+        Canceled: The command was terminated before it was completed. This is a terminal state.
+        Rate Exceeded: The number of instances targeted by the command exceeded the account limit for pending invocations. The system has canceled the command before running it on any instance. This is a terminal state.
+        """
         if response["Command"]["Status"] == "Success":
             logger.info(response)
         else:
