@@ -36,34 +36,43 @@ def lambda_handler(event, context):
     """
 
     try:
-        # バッチサイズを１個にすれば１個ずつ処理できる
-        # 複数のメッセージが送信されるバッチにする場合にはメッセージごとの削除がどうなるのかの挙動を確認
-        record = event["Records"][0]["messageAttributes"]
-        message = record["messageAttributes"]
+        # 複数のメッセージをバッチで受信
+        record = event["Records"]
 
         # all running EC2 instances
         ec2_resp = ec2.describe_instances(Filters=[
             {"Name": "*sidecar", "Values": ["running"]}])
 
-        # 空配列の場合
+        # 空dictの場合
         if ec2_resp["Reservations"] is None:
             logger.info("No available instance.")
 
-        # Get InstanceID
-        # Lambdaの同時実行を制御しないとDB更新等はデッドロックになりそう
-        # LambdaのProvisioned Concurrencyを設定することで初期実行の遅延を制御
+        # インスタンスIDを取得
+        # 関数実行のタイムアウトの6倍の可視性タイムアウト設定が必要
+        # https://docs.aws.amazon.com/ja_jp/lambda/latest/dg/with-sqs.html#events-sqs-eventsource
         instances = [i["InstanceId"] for r in ec2_resp["Reservations"] for i in r["Instances"]]
- 
-        response = ssm.send_command(
-            InstanceIds=instances,
-            DocumentName="AWS-RunShellScript",
-            Parameters={
-                "commands": [
-                    f"specify command {message}"
-                ],
-                "executionTimeout": ["3600"]
-            },
-        )
+        for message in record:
+            response = ssm.send_command(
+                InstanceIds=instances,
+                DocumentName="AWS-RunShellScript",
+                Parameters={
+                    "commands": [
+                        f"specify command {message}"
+                    ],
+                    "executionTimeout": ["60"]
+                },
+            )
+            if response["Command"]["Status"] == "Success":
+                # 成功した場合は個別でメッセージを削除する
+                logger.info(response)
+                sqs.delete_message(
+                    QueueUrl="queue_url",
+                    ReceiptHandle=message['receiptHandle']
+                )
+            else:
+                # 成功以外の場合はバッチごとキューに積み直し
+                # 成功したメッセージは消えているはず...
+                raise RuntimeError
 
         # コマンド実行状況に応じて対応を変更
         # 時間がかかるようならここを非同期的にする仕組み(別Lambdaにしてアプリ側からのpushを受けとる)
@@ -79,10 +88,6 @@ def lambda_handler(event, context):
         Canceled: The command was terminated before it was completed. This is a terminal state.
         Rate Exceeded: The number of instances targeted by the command exceeded the account limit for pending invocations. The system has canceled the command before running it on any instance. This is a terminal state.
         """
-        if response["Command"]["Status"] == "Success":
-            logger.info(response)
-        else:
-            raise RuntimeError
 
     except Exception as e:
         logger.error(e)
