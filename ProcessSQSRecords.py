@@ -34,12 +34,14 @@ def lambda_handler(event, context):
     """
 
     try:
-        for record in event["Records"]:
-            message = record["messageAttributes"]
+        # バッチサイズを１個にすれば１個ずつ処理できる
+        # 複数のメッセージが送信されるバッチにする場合にはメッセージごとの削除がどうなるのかの挙動を確認
+        record = event["Records"][0]["messageAttributes"]
+        message = record["messageAttributes"]
 
         # all running EC2 instances
         ec2_resp = ec2.describe_instances(Filters=[
-            {"Name": f"*sidecar", "Values": ["running"]}])
+            {"Name": "*sidecar", "Values": ["running"]}])
 
         # 空配列の場合
         if ec2_resp["Reservations"] is None:
@@ -48,9 +50,10 @@ def lambda_handler(event, context):
         # Get InstanceID
         # Lambdaの同時実行を制御しないとDB更新等はデッドロックになりそう
         # LambdaのProvisioned Concurrencyを設定することで初期実行の遅延を制御
-        instance = ec2_resp["Reservations"][0]["InstanceId"]
+        instances = [i["InstanceId"] for r in ec2_resp["Reservations"] for i in r["Instances"]]
+ 
         response = ssm.send_command(
-            InstanceIds=instance,
+            InstanceIds=instances,
             DocumentName="AWS-RunShellScript",
             Parameters={
                 "commands": [
@@ -64,14 +67,9 @@ def lambda_handler(event, context):
         # 時間がかかるようならここを非同期的にする仕組み(別Lambdaにしてアプリ側からのpushを受けとる)
         # Lambdaが自動でSQSのメッセージを成功/失敗で場合分して処理してくれる気もするので、そのままResponseを返せばOKかも？
         if response["Command"]["Status"] == "Success":
-            name = "queue_name"  # TODO:どこかで設定ファイルや環境変数から読み込み？
-            url = sqs.get_queue_url(
-                QueueName=name,
-            )
-            sqs.delete_message(
-                QueueUrl=url,
-                ReceiptHandle=record["receiptHandle"]
-            )
+            logger.info(response)
+        else:
+            raise RuntimeError
 
     except Exception as e:
         logger.error(e)
