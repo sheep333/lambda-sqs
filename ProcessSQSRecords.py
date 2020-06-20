@@ -38,7 +38,7 @@ def lambda_handler(event, context):
     try:
         # バッチサイズを１個にすれば１個ずつ処理できる
         # 複数のメッセージが送信されるバッチにする場合にはメッセージごとの削除がどうなるのかの挙動を確認
-        record = event["Records"][0]["messageAttributes"]
+        record = event["Records"][0]
         message = record["messageAttributes"]
 
         # all running EC2 instances
