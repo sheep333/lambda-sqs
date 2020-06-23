@@ -1,0 +1,34 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Example of processing messages on an SQS queue with Lambda
+Resources:
+  MySQSQueueFunction:
+    # Lambdaの設定
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: ProcessSQSRecords.lambda_handler
+      Runtime: python3.8
+      DeadLetterQueue: MyDeadLetterQueue
+      Policies:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AmazonSSMAutomationRole
+      Events:
+        MySQSEvent:
+          Type: SQS
+          Properties:
+            Queue: MySqsQueue.Arn
+            # バッチ処理を1より大きくする場合にはfeature/deal-multi-messagesのような処理になるはず...
+            # 遅延キューの動的な変更は難しそう...？
+            # https://docs.aws.amazon.com/ja_jp/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-configure-delay-queue.html
+            BatchSize: 10
+  MySqsQueue:
+    # SQSの設定
+    Type: AWS::SQS::Queue
+    Arn: arn:aws:sqs:region:account_id:queue_name_1
+
+  MyDeadLetterQueue:
+    # DeadletterQueue用のSQSの設定(SNSも選択可)
+    # Lambdaが実行できない場合、SQSかSNSかDeadLetterQueueの行先を決められる
+    # https://docs.aws.amazon.com/ja_jp/serverless-application-model/latest/developerguide/sam-property-function-deadletterqueue.html
+    TargetArn: arn:aws:sqs:region:account_id:queue_name_2
+    Type: SQS
