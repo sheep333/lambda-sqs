@@ -83,6 +83,23 @@ def lambda_handler(event, context):
             logger.info(response)
         else:
             raise RuntimeError
+        
+        # メッセージの溜まり具合によって遅延時間を設定していく？
+        # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/sqs.html#SQS.Client.set_queue_attributes
+        messages_num = sqs.get_queue_attributes(
+            QueueUrl='string',
+            AttributeNames=[
+                'ApproximateNumberOfMessages'
+            ]
+        )
+
+        if messages_num > 20:
+            response = sqs.set_queue_attributes(
+                QueueUrl='string',
+                Attributes={
+                    'DelaySeconds': f'{messages_num / 5}'
+                }
+            )
 
     except Exception as e:
         logger.error(e)
